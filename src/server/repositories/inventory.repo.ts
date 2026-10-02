@@ -180,17 +180,21 @@ export async function insertStockConfirmation(
   }
 
   // Update the store_items table
-  const { error: updateError } = await supabase
+  const { data: updatedItem, error: updateError } = await supabase
     .from('store_items')
     .update({
       in_stock: inStock,
       last_confirmed_at: new Date().toISOString(),
     })
     .eq('store_id', storeId)
-    .eq('item_id', itemId);
+    .eq('item_id', itemId)
+    .select('item_id')
+    .single();
 
-  if (updateError) {
-    console.error(`[inventory.repo] store_items update failed: ${updateError.message}`);
+  if (updateError || !updatedItem) {
+    throw new Error(
+      `[inventory.repo] store_items update failed: ${updateError?.message ?? 'Item no longer exists in this store'}`
+    );
   }
 
   return confirmRow as StockConfirmationRow;
