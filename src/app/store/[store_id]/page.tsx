@@ -124,8 +124,8 @@ export default function StoreNudgePage({
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-500 font-medium text-sm">Loading priority store nudges...</p>
+        <div className="w-8 h-8 border-2 border-black dark:border-white border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-zinc-500 font-medium text-xs">Loading priority store nudges...</p>
       </div>
     );
   }
@@ -133,10 +133,10 @@ export default function StoreNudgePage({
   if (!data) {
     return (
       <div className="max-w-md mx-auto p-8 text-center">
-        <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-600">
-          <h2 className="text-lg font-bold">Store Not Found</h2>
-          <p className="text-sm mt-1">Unable to locate store with ID: {store_id}</p>
-          <Link href="/control-tower" className="mt-4 inline-block text-xs font-bold text-blue-600 underline">
+        <div className="p-6 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100">
+          <h2 className="text-base font-bold">Store Not Found</h2>
+          <p className="text-xs text-zinc-500 mt-1">Unable to locate store with ID: {store_id}</p>
+          <Link href="/control-tower" className="mt-4 inline-block text-xs font-semibold text-black dark:text-white underline">
             Return to Control Tower
           </Link>
         </div>
@@ -144,53 +144,44 @@ export default function StoreNudgePage({
     );
   }
 
-  const isHealthy = data.band === 'HEALTHY';
-  const isAtRisk = data.band === 'AT_RISK';
-
   return (
     <div className="min-h-screen p-4 sm:p-6 max-w-2xl mx-auto space-y-6">
       {/* Mobile-Friendly Store Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+      <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
         <div>
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold mb-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium mb-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-black dark:bg-white"></span>
             <span>SCR-03 • Store Owner Portal</span>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">{data.store_name}</h1>
-          <p className="text-xs text-slate-400 font-mono">
+          <h1 className="text-2xl font-black text-zinc-950 dark:text-white">{data.store_name}</h1>
+          <p className="text-xs text-zinc-400 font-mono">
             {data.city} • Store ID: {data.store_id}
           </p>
         </div>
 
         {/* Reliability Score Card */}
-        <div
-          className={`p-3 sm:p-4 rounded-2xl text-center border-2 shadow-sm ${
-            isHealthy
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-200'
-              : isAtRisk
-              ? 'bg-red-50 border-red-300 text-red-900 dark:bg-red-950/40 dark:border-red-800 dark:text-red-200'
-              : 'bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-200'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <div className="p-3 sm:p-4 rounded-xl text-center border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shadow-sm min-w-28">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
             Reliability Score
           </div>
-          <div className="text-3xl font-black font-mono leading-none my-1">{data.srs}</div>
-          <div className="text-[11px] font-bold">{data.band}</div>
+          <div className="text-2xl font-black font-mono leading-none my-1 text-zinc-950 dark:text-white">{data.srs}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 inline-block">
+            {data.band}
+          </div>
           {srsLift !== null && srsLift > 0 && (
-            <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 animate-bounce mt-1">
-              +{srsLift} pts lift!
+            <div className="text-[10px] font-bold text-zinc-900 dark:text-white mt-1">
+              +{srsLift} pts lift
             </div>
           )}
         </div>
       </div>
 
       {/* Action Purpose Explanation */}
-      <div className="p-4 bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl text-xs text-blue-900 dark:text-blue-200 flex items-start gap-3">
-        <span className="text-xl">⚡</span>
+      <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-800 dark:text-zinc-200 flex items-start gap-3">
+        <span className="text-base font-bold">⚡</span>
         <div>
-          <strong className="block font-bold">Quick One-Tap Stock Confirmation</strong>
-          <span>
+          <strong className="block font-semibold">One-Tap Stock Confirmation</strong>
+          <span className="text-zinc-500">
             Confirming these {data.nudges.length} high-demand items keeps your store active, avoids order cancellations, and elevates your Reliability Score.
           </span>
         </div>
@@ -204,21 +195,21 @@ export default function StoreNudgePage({
 
       {/* Nudge Items List or All-Caught-Up State */}
       {data.nudges.length === 0 ? (
-        <div className="p-12 text-center border-2 border-dashed border-emerald-300 dark:border-emerald-800 rounded-3xl bg-emerald-50/30 dark:bg-emerald-950/20 space-y-3">
-          <div className="text-5xl">🎉</div>
-          <h2 className="text-xl font-bold text-emerald-800 dark:text-emerald-300">All caught up!</h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
-            Your high-demand inventory is fully verified. Thank you for keeping your stock fresh!
+        <div className="p-12 text-center border border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl bg-zinc-50 dark:bg-zinc-900/40 space-y-3">
+          <div className="text-3xl font-bold">✓</div>
+          <h2 className="text-lg font-bold text-zinc-950 dark:text-white">All caught up!</h2>
+          <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+            Your high-demand inventory is fully verified. Thank you for keeping your stock fresh.
           </p>
           {confirmedItemsCount > 0 && (
-            <div className="inline-block px-4 py-1.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 rounded-full font-bold text-xs">
+            <div className="inline-block px-3 py-1 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-full font-semibold text-xs">
               {confirmedItemsCount} item(s) confirmed this session
             </div>
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs text-zinc-500 font-medium px-1">
             <span>High-Demand Items ({data.nudges.length} pending)</span>
             <span>Tap to verify</span>
           </div>
@@ -226,19 +217,19 @@ export default function StoreNudgePage({
           {data.nudges.map((nudge) => (
             <div
               key={nudge.item_id}
-              className="p-4 sm:p-5 bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4 hover:shadow-md transition-shadow"
+              className="p-4 bg-white dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-3"
             >
               <div>
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900 dark:text-white text-base sm:text-lg">
+                  <h3 className="font-bold text-zinc-950 dark:text-white text-base">
                     {nudge.item_name}
                   </h3>
-                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                  <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">
                     High Demand
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                  <span>📊 {nudge.reason}</span>
+                <p className="text-xs text-zinc-500 mt-1">
+                  <span>{nudge.reason}</span>
                 </p>
               </div>
 
@@ -247,14 +238,14 @@ export default function StoreNudgePage({
                 <button
                   disabled={submittingItem === nudge.item_id}
                   onClick={() => handleStockAction(nudge.item_id, false)}
-                  className="min-h-[48px] py-3 px-4 rounded-xl border-2 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm transition-all active:scale-95 disabled:opacity-50"
+                  className="min-h-[44px] py-2.5 px-4 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-semibold text-xs transition-all active:scale-95 disabled:opacity-50"
                 >
                   Out of Stock ✕
                 </button>
                 <button
                   disabled={submittingItem === nudge.item_id}
                   onClick={() => handleStockAction(nudge.item_id, true)}
-                  className="min-h-[48px] py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="min-h-[44px] py-2.5 px-4 rounded-lg bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-semibold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   <span>In Stock</span>
                   <span>✓</span>
@@ -266,8 +257,8 @@ export default function StoreNudgePage({
       )}
 
       {/* Navigation Footer */}
-      <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-        <Link href="/control-tower" className="text-blue-600 hover:underline font-semibold">
+      <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-xs text-zinc-500">
+        <Link href="/control-tower" className="text-zinc-950 dark:text-white hover:underline font-semibold">
           &larr; Back to Control Tower
         </Link>
         <span>Store Owner Session</span>
