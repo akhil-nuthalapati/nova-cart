@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { computeScenario, validateScenarioInput } from '../../../../domain/scenario';
-import fs from 'fs';
-import path from 'path';
-
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
+import { metricsRepo, ordersRepo, ticketsRepo } from '../../../../server/repositories';
 
 const ScenarioRequestSchema = z.object({
   reduction: z.number().min(0).max(1),
@@ -38,19 +32,21 @@ export async function POST(request: Request) {
 
     const { reduction } = parsed.data;
 
-    const db = getDB();
-    const current = db.snapshots?.current;
+    const { current } = await metricsRepo.getMetricSnapshots();
     const aov = current?.met004_aov ?? 486;
     const revPerOrder = (current?.met010_revenue && current?.met003_monthly_orders)
       ? current.met010_revenue / current.met003_monthly_orders
       : 67.79;
 
+    const inventoryCancels = await ordersRepo.getInventoryCancellationCount();
+    const ticketsForUnavailable = await ticketsRepo.getTicketCountByCategory('missing_unavailable');
+
     const input = {
       reduction,
-      inventory_cancels: 2245, // DER-006: 1482 unavailable + 762 rejected
+      inventory_cancels: inventoryCancels || 2245, // DER-006: 1482 unavailable + 762 rejected
       aov,
       revenue_per_order: Number(revPerOrder.toFixed(2)),
-      tickets_for_unavailable: db.tickets?.missing_unavailable ?? 1121,
+      tickets_for_unavailable: ticketsForUnavailable || 1121,
     };
 
     const issues = validateScenarioInput(input);
@@ -82,13 +78,14 @@ export async function POST(request: Request) {
         synthetic: true,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to process scenario calculation';
     console.error('Scenario API Error:', err);
     return NextResponse.json(
       {
         error: {
           code: 'INTERNAL',
-          message: err?.message || 'Failed to process scenario calculation',
+          message,
         },
       },
       { status: 500 }

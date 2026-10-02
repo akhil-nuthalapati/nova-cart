@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { computeSRS } from '../../../../domain/reliability';
 import { RULES_V1 } from '../../../../config/rules.v1';
-import fs from 'fs';
-import path from 'path';
-
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
+import { storesRepo, ordersRepo } from '../../../../server/repositories';
 
 /**
  * API-03: GET /api/stores/reliability
@@ -23,35 +17,36 @@ export async function GET(request: Request) {
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
 
-  const db = getDB();
-  const stores = db.stores || [];
-  const orders = db.orders || [];
+  const stores = await storesRepo.getStores({
+    city: city || undefined,
+    category: category || undefined,
+  });
 
-  // Group orders by store to compute rates
-  const storeOrderStats: Record<string, { total: number; unavail: number; reject: number }> = {};
-  for (const o of orders) {
-    if (!storeOrderStats[o.store_id]) {
-      storeOrderStats[o.store_id] = { total: 0, unavail: 0, reject: 0 };
-    }
-    storeOrderStats[o.store_id].total++;
-    if (o.cancellation_reason === 'unavailable') storeOrderStats[o.store_id].unavail++;
-    if (o.cancellation_reason === 'store_rejected') storeOrderStats[o.store_id].reject++;
-  }
+  const orderStats = await ordersRepo.getStoreOrderStats();
+  const statsMap = new Map(orderStats.map((s) => [s.store_id, s]));
 
   // Compute SRS for each store
-  let scoredStores = stores.map((store: any) => {
-    const stats = storeOrderStats[store.id] || { total: 0, unavail: 0, reject: 0 };
+  let scoredStores = stores.map((store) => {
+    const stats = statsMap.get(store.id) || {
+      total_orders: 0,
+      unavail_cancels: 0,
+      reject_cancels: 0,
+      inventory_cancels: 0,
+      unavail_rate: 0,
+      reject_rate: 0,
+    };
+
     const hours = store.last_confirmed_hours_ago ?? 24;
     const r_stale = Math.min(1, hours / RULES_V1.staleness.critical_after_h);
-    const unavail_rate = stats.total > 0 ? stats.unavail / stats.total : 0;
-    const reject_rate = stats.total > 0 ? stats.reject / stats.total : 0;
+    const unavail_rate = stats.unavail_rate;
+    const reject_rate = stats.reject_rate;
 
     const srsResult = computeSRS(
       {
         r_stale,
         store_unavail_rate: unavail_rate,
         store_reject_rate: reject_rate,
-        orders_in_window: stats.total,
+        orders_in_window: stats.total_orders,
       },
       RULES_V1.srs
     );
@@ -59,11 +54,11 @@ export async function GET(request: Request) {
     return {
       store_id: store.id,
       name: store.name,
-      city: store.city,
+      city: store.city_name,
       category: store.category,
       last_confirmed_hours_ago: hours,
-      orders_30d: stats.total,
-      cancels_30d: stats.unavail + stats.reject,
+      orders_30d: stats.total_orders,
+      cancels_30d: stats.inventory_cancels,
       srs: srsResult.srs,
       band: srsResult.band,
       components: {
@@ -75,24 +70,19 @@ export async function GET(request: Request) {
     };
   });
 
-  // Apply filters
-  if (city) {
-    scoredStores = scoredStores.filter((s: any) => s.city.toLowerCase() === city.toLowerCase());
-  }
+  // Apply band filter
   if (band) {
-    scoredStores = scoredStores.filter((s: any) => s.band.toLowerCase() === band.toLowerCase());
-  }
-  if (category) {
-    scoredStores = scoredStores.filter((s: any) => s.category.toLowerCase() === category.toLowerCase());
+    const b = band.toLowerCase();
+    scoredStores = scoredStores.filter((s) => s.band.toLowerCase() === b);
   }
 
   // Sort
   if (sort === 'srs_asc') {
-    scoredStores.sort((a: any, b: any) => a.srs - b.srs);
+    scoredStores.sort((a, b) => a.srs - b.srs);
   } else if (sort === 'srs_desc') {
-    scoredStores.sort((a: any, b: any) => b.srs - a.srs);
+    scoredStores.sort((a, b) => b.srs - a.srs);
   } else if (sort === 'cancels_desc') {
-    scoredStores.sort((a: any, b: any) => b.cancels_30d - a.cancels_30d);
+    scoredStores.sort((a, b) => b.cancels_30d - a.cancels_30d);
   }
 
   const total = scoredStores.length;

@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { computeVerdict } from '../../../../domain/verdict';
 import { RULES_V1 } from '../../../../config/rules.v1';
-import fs from 'fs';
-import path from 'path';
-
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
+import { metricsRepo } from '../../../../server/repositories';
 
 /**
  * API-01: GET /api/growth/verdict
@@ -15,9 +9,7 @@ function getDB() {
  * Roles: all (Executive / Finance / Ops)
  */
 export async function GET() {
-  const db = getDB();
-  const baseline = db.snapshots?.baseline;
-  const current = db.snapshots?.current;
+  const { baseline, current } = await metricsRepo.getMetricSnapshots();
 
   if (!baseline || !current) {
     return NextResponse.json(

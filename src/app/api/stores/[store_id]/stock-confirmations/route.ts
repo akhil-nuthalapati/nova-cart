@@ -2,16 +2,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { computeSRS } from '../../../../../domain/reliability';
 import { RULES_V1 } from '../../../../../config/rules.v1';
-import fs from 'fs';
-import path from 'path';
+import { storesRepo, ordersRepo, inventoryRepo } from '../../../../../server/repositories';
 
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
-
-// In-memory idempotency cache for demo
-const idempotencyCache = new Map<string, any>();
+// In-memory idempotency cache for fast response matching
+const idempotencyCache = new Map<string, unknown>();
 
 const StockConfirmationSchema = z.object({
   items: z.array(
@@ -58,8 +52,13 @@ export async function POST(
       return NextResponse.json(idempotencyCache.get(cacheKey));
     }
 
-    const db = getDB();
-    const store = (db.stores || []).find((s: any) => s.id === store_id);
+    const alreadyExists = await inventoryRepo.checkIdempotencyKey(idempotencyKey);
+    if (alreadyExists) {
+      const cached = idempotencyCache.get(cacheKey);
+      if (cached) return NextResponse.json(cached);
+    }
+
+    const store = await storesRepo.getStoreById(store_id);
     if (!store) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `Store with ID ${store_id} not found` } },
@@ -67,10 +66,15 @@ export async function POST(
       );
     }
 
-    const storeOrders = (db.orders || []).filter((o: any) => o.store_id === store_id);
-    const total = storeOrders.length;
-    const unavail = storeOrders.filter((o: any) => o.cancellation_reason === 'unavailable').length;
-    const reject = storeOrders.filter((o: any) => o.cancellation_reason === 'store_rejected').length;
+    const orderStats = await ordersRepo.getStoreOrderStats([store_id]);
+    const stats = orderStats[0] || {
+      total_orders: 0,
+      unavail_cancels: 0,
+      reject_cancels: 0,
+      inventory_cancels: 0,
+      unavail_rate: 0,
+      reject_rate: 0,
+    };
 
     // Before SRS (using previous staleness)
     const previousHours = store.last_confirmed_hours_ago ?? 48;
@@ -78,24 +82,39 @@ export async function POST(
     const beforeResult = computeSRS(
       {
         r_stale: r_stale_before,
-        store_unavail_rate: total > 0 ? unavail / total : 0,
-        store_reject_rate: total > 0 ? reject / total : 0,
-        orders_in_window: total,
+        store_unavail_rate: stats.unavail_rate,
+        store_reject_rate: stats.reject_rate,
+        orders_in_window: stats.total_orders,
       },
       RULES_V1.srs
     );
 
     // After SRS (confirmation resets staleness to 0h fresh)
-    const r_stale_after = 0; // Fresh confirmation!
+    const r_stale_after = 0;
     const afterResult = computeSRS(
       {
         r_stale: r_stale_after,
-        store_unavail_rate: total > 0 ? unavail / total : 0,
-        store_reject_rate: total > 0 ? reject / total : 0,
-        orders_in_window: total,
+        store_unavail_rate: stats.unavail_rate,
+        store_reject_rate: stats.reject_rate,
+        orders_in_window: stats.total_orders,
       },
       RULES_V1.srs
     );
+
+    // Persist confirmation via repository
+    for (const item of items) {
+      try {
+        await inventoryRepo.insertStockConfirmation(
+          store_id,
+          item.itemId,
+          item.inStock,
+          `${idempotencyKey}:${item.itemId}`
+        );
+      } catch (err: unknown) {
+        // If single duplicate key inside batch, ignore or handle
+        console.warn(`[stock-confirmation] Confirmation item insert notice:`, err);
+      }
+    }
 
     const responsePayload = {
       data: {
@@ -122,9 +141,10 @@ export async function POST(
     idempotencyCache.set(cacheKey, responsePayload);
 
     return NextResponse.json(responsePayload);
-  } catch {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to record stock confirmation';
     return NextResponse.json(
-      { error: { code: 'INTERNAL', message: 'Failed to record stock confirmation' } },
+      { error: { code: 'INTERNAL', message } },
       { status: 500 }
     );
   }

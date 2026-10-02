@@ -13,10 +13,17 @@ export default function ExecutiveDashboard() {
   const [showEvidence, setShowEvidence] = useState(true);
 
   useEffect(() => {
-    fetch('/api/growth')
-      .then((res) => res.json())
-      .then((data) => {
-        setVerdictData(data);
+    Promise.all([
+      fetch('/api/growth').then((res) => res.json()),
+      fetch('/api/growth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposed_increase: 510000 }),
+      }).then((res) => res.json()),
+    ])
+      .then(([growthData, initialGateData]) => {
+        setVerdictData(growthData);
+        setGateData(initialGateData);
         setLoading(false);
       })
       .catch((err) => {
@@ -38,13 +45,6 @@ export default function ExecutiveDashboard() {
       console.error('Gate check failed:', err);
     }
   };
-
-  // Run gate check on initial load if verdict is available
-  useEffect(() => {
-    if (verdictData) {
-      handleGateCheck();
-    }
-  }, [verdictData]);
 
   if (loading) {
     return (

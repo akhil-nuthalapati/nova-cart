@@ -3,13 +3,7 @@ import { computeItemConfidence, suggestAlternatives } from '../../../../domain/a
 import { computeStaleness } from '../../../../domain/reliability';
 import { RULES_V1 } from '../../../../config/rules.v1';
 import { ItemConfidence } from '../../../../domain/types';
-import fs from 'fs';
-import path from 'path';
-
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
+import { storesRepo } from '../../../../server/repositories';
 
 /**
  * API-08: GET /api/availability/confidence
@@ -21,11 +15,12 @@ export async function GET(request: Request) {
   const storeId = searchParams.get('storeId') || 'store-1';
   const itemIds = (searchParams.get('itemIds') || 'milk-1l,bread-400g,eggs-12').split(',');
 
-  const db = getDB();
-  const store = (db.stores || []).find((s: any) => s.id === storeId) || {
+  const store = (await storesRepo.getStoreById(storeId)) || {
     id: storeId,
     name: 'Sample Store',
-    city: 'City A',
+    city_name: 'City A',
+    category: 'grocery',
+    active: true,
     last_confirmed_hours_ago: 48,
   };
 
@@ -34,12 +29,12 @@ export async function GET(request: Request) {
   const lastConfirmedAt = new Date(now.getTime() - hoursAgo * 3600 * 1000);
   const staleness = computeStaleness(lastConfirmedAt, now, RULES_V1.staleness);
 
-  // Mock catalog with other stores for alternative discovery (BUS-006)
+  // Catalog with other stores for alternative discovery (BUS-006)
   const catalogInventory = [
     {
       store_id: 'store-2',
       store_name: 'Store 2 (Nearby)',
-      city: store.city,
+      city: store.city_name,
       item_id: 'milk-1l',
       item_name: 'Farm Fresh Whole Milk 1L',
       category: 'dairy',
@@ -48,7 +43,7 @@ export async function GET(request: Request) {
     {
       store_id: store.id,
       store_name: store.name,
-      city: store.city,
+      city: store.city_name,
       item_id: 'soymilk-1l',
       item_name: 'Organic Soy Milk 1L',
       category: 'dairy',
@@ -57,7 +52,7 @@ export async function GET(request: Request) {
     {
       store_id: 'store-3',
       store_name: 'Store 3',
-      city: store.city,
+      city: store.city_name,
       item_id: 'bread-400g',
       item_name: 'Whole Wheat Bread 400g',
       category: 'bakery',
@@ -77,13 +72,13 @@ export async function GET(request: Request) {
       RULES_V1.itemConfidence
     );
 
-    let alternatives: any[] = [];
+    let alternatives: unknown[] = [];
     if (confResult.confidence === ItemConfidence.LOW) {
       alternatives = suggestAlternatives(
         {
           item_id: itemId,
           category: itemId.includes('milk') ? 'dairy' : 'bakery',
-          city: store.city,
+          city: store.city_name,
           current_store_id: store.id,
         },
         catalogInventory
@@ -103,7 +98,7 @@ export async function GET(request: Request) {
     data: {
       store_id: store.id,
       store_name: store.name,
-      city: store.city,
+      city: store.city_name,
       items: results,
     },
     meta: {

@@ -3,13 +3,7 @@ import { generateInterventions } from '../../../domain/interventions';
 import { computeBudgetGuard } from '../../../domain/budget';
 import { computeSRS } from '../../../domain/reliability';
 import { RULES_V1 } from '../../../config/rules.v1';
-import fs from 'fs';
-import path from 'path';
-
-function getDB() {
-  const p = path.join(process.cwd(), 'public', 'demo-db.json');
-  return JSON.parse(fs.readFileSync(p, 'utf-8'));
-}
+import { storesRepo, ordersRepo } from '../../../server/repositories';
 
 /**
  * API-07: GET /api/interventions
@@ -21,34 +15,28 @@ export async function GET(request: Request) {
   const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '15', 10)));
   const reduction = parseFloat(searchParams.get('reduction') || '0.25');
 
-  const db = getDB();
-  const stores = db.stores || [];
-  const orders = db.orders || [];
+  const stores = await storesRepo.getStores();
+  const orderStats = await ordersRepo.getStoreOrderStats();
+  const statsMap = new Map(orderStats.map((s) => [s.store_id, s]));
 
-  // Group orders by store to compute rates
-  const storeOrderStats: Record<string, { total: number; unavail: number; reject: number }> = {};
-  for (const o of orders) {
-    if (!storeOrderStats[o.store_id]) {
-      storeOrderStats[o.store_id] = { total: 0, unavail: 0, reject: 0 };
-    }
-    storeOrderStats[o.store_id].total++;
-    if (o.cancellation_reason === 'unavailable') storeOrderStats[o.store_id].unavail++;
-    if (o.cancellation_reason === 'store_rejected') storeOrderStats[o.store_id].reject++;
-  }
-
-  const storeInputs = stores.map((s: any) => {
-    const stats = storeOrderStats[s.id] || { total: 0, unavail: 0, reject: 0 };
+  const storeInputs = stores.map((s) => {
+    const stats = statsMap.get(s.id) || {
+      total_orders: 0,
+      unavail_cancels: 0,
+      reject_cancels: 0,
+      inventory_cancels: 0,
+      unavail_rate: 0,
+      reject_rate: 0,
+    };
     const hours = s.last_confirmed_hours_ago ?? 36;
     const r_stale = Math.min(1, hours / RULES_V1.staleness.critical_after_h);
-    const unavail_rate = stats.total > 0 ? stats.unavail / stats.total : 0;
-    const reject_rate = stats.total > 0 ? stats.reject / stats.total : 0;
 
     const srsResult = computeSRS(
       {
         r_stale,
-        store_unavail_rate: unavail_rate,
-        store_reject_rate: reject_rate,
-        orders_in_window: stats.total,
+        store_unavail_rate: stats.unavail_rate,
+        store_reject_rate: stats.reject_rate,
+        orders_in_window: stats.total_orders,
       },
       RULES_V1.srs
     );
@@ -58,7 +46,7 @@ export async function GET(request: Request) {
       store_name: s.name,
       srs: srsResult.srs,
       band: srsResult.band,
-      store_inventory_cancels_30d: stats.unavail + stats.reject,
+      store_inventory_cancels_30d: stats.inventory_cancels,
       last_confirmed_hours_ago: hours,
     };
   });

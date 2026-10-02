@@ -78,23 +78,30 @@ export default function ControlTowerPage() {
   // Scenario Simulator
   const [reduction, setReduction] = useState<number>(0.25); // Default 25% (GOLD-04)
   const [scenarioResult, setScenarioResult] = useState<ScenarioData | null>(null);
-  const [simulating, setSimulating] = useState(false);
 
   // Interventions & Budget
   const [interventions, setInterventions] = useState<Intervention[]>([]);
   const [budgetGuard, setBudgetGuard] = useState<BudgetGuard | null>(null);
 
-  // Load Initial Breakdown and Interventions
+  // Load Initial Breakdown, Interventions, and Default Scenario (25% GOLD-04)
   useEffect(() => {
     Promise.all([
       fetch('/api/cancellations/breakdown').then((r) => r.json()),
       fetch('/api/interventions?reduction=0.25&limit=8').then((r) => r.json()),
+      fetch('/api/scenarios/impact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reduction: 0.25 }),
+      }).then((r) => r.json()),
     ])
-      .then(([breakdownRes, interventionsRes]) => {
+      .then(([breakdownRes, interventionsRes, scenarioRes]) => {
         if (breakdownRes.data) setCancellation(breakdownRes.data);
         if (interventionsRes.data) {
           setInterventions(interventionsRes.data.interventions);
           setBudgetGuard(interventionsRes.data.budget_guard);
+        }
+        if (scenarioRes.data) {
+          setScenarioResult(scenarioRes.data);
         }
       })
       .catch((err) => console.error('Failed to load initial data:', err));
@@ -102,7 +109,7 @@ export default function ControlTowerPage() {
 
   // Fetch Stores with Filters
   useEffect(() => {
-    setLoading(true);
+    let ignore = false;
     const params = new URLSearchParams();
     if (cityFilter) params.append('city', cityFilter);
     if (categoryFilter) params.append('category', categoryFilter);
@@ -113,19 +120,26 @@ export default function ControlTowerPage() {
     fetch(`/api/stores/reliability?${params.toString()}`)
       .then((r) => r.json())
       .then((res) => {
-        if (res.data) setStores(res.data);
-        setLoading(false);
+        if (!ignore) {
+          if (res.data) setStores(res.data);
+          setLoading(false);
+        }
       })
       .catch((err) => {
-        console.error('Failed to load stores:', err);
-        setLoading(false);
+        if (!ignore) {
+          console.error('Failed to load stores:', err);
+          setLoading(false);
+        }
       });
+
+    return () => {
+      ignore = true;
+    };
   }, [cityFilter, categoryFilter, bandFilter, sortOrder]);
 
   // Run Scenario Calculation (API-06)
   const runScenario = (rValue: number) => {
     setReduction(rValue);
-    setSimulating(true);
     fetch('/api/scenarios/impact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -134,18 +148,11 @@ export default function ControlTowerPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.data) setScenarioResult(data.data);
-        setSimulating(false);
       })
       .catch((err) => {
         console.error('Scenario simulation failed:', err);
-        setSimulating(false);
       });
   };
-
-  // Run initial scenario with 25% (GOLD-04)
-  useEffect(() => {
-    runScenario(0.25);
-  }, []);
 
   const getBandBadge = (band: string) => {
     switch (band) {

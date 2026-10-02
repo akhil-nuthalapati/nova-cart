@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { seedDatabase } from '../../../../../scripts/seed';
+import { invalidateDemoCache } from '../../../../server/db/json-store';
 
 /**
  * API-09: POST /api/dev/reset-seed
@@ -16,14 +17,16 @@ export async function POST() {
 
   try {
     seedDatabase();
+    invalidateDemoCache();
     return NextResponse.json({
       success: true,
       message: 'Demo database reseeded successfully with canonical values.',
       timestamp: new Date().toISOString(),
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to reseed database';
     return NextResponse.json(
-      { error: { code: 'INTERNAL', message: err.message || 'Failed to reseed database' } },
+      { error: { code: 'INTERNAL', message } },
       { status: 500 }
     );
   }

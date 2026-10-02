@@ -23,6 +23,10 @@ interface StoreData {
   nudges: NudgeItem[];
 }
 
+function generateConfirmationKey(storeId: string, itemId: string): string {
+  return `conf-${storeId}-${itemId}-${Date.now()}`;
+}
+
 export default function StoreNudgePage({
   params,
 }: {
@@ -67,7 +71,7 @@ export default function StoreNudgePage({
     setConfirmedItemsCount((prev) => prev + 1);
 
     try {
-      const idempotencyKey = `conf-${store_id}-${itemId}-${Date.now()}`;
+      const idempotencyKey = generateConfirmationKey(store_id, itemId);
       const res = await fetch(`/api/stores/${store_id}/stock-confirmations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
