@@ -39,6 +39,7 @@ export default function StoreNudgePage({
   const [confirmedItemsCount, setConfirmedItemsCount] = useState(0);
   const [srsLift, setSrsLift] = useState<number | null>(null);
   const [submittingItem, setSubmittingItem] = useState<string | null>(null);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/stores/${store_id}/nudges`)
@@ -59,6 +60,7 @@ export default function StoreNudgePage({
     if (!data) return;
 
     setSubmittingItem(itemId);
+    setConfirmationError(null);
 
     // Optimistic UI update: remove item from active nudges
     const itemToRemove = data.nudges.find((n) => n.item_id === itemId);
@@ -81,22 +83,28 @@ export default function StoreNudgePage({
         }),
       });
 
-      const result = await res.json();
-      if (result.data) {
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                srs: result.data.after_srs,
-                band: result.data.after_band,
-              }
-            : null
-        );
-        setSrsLift(result.data.srs_lift);
+      if (!res.ok) {
+        throw new Error(`Stock confirmation failed (${res.status})`);
       }
+
+      const result = await res.json();
+      if (!result?.data) {
+        throw new Error('Stock confirmation response is missing data');
+      }
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              srs: result.data.after_srs,
+              band: result.data.after_band,
+            }
+          : null
+      );
+      setSrsLift(result.data.srs_lift);
     } catch (err) {
       console.error('Failed to submit confirmation:', err);
-      // Rollback optimistic removal on network failure
+      setConfirmationError('Could not confirm stock. Please try again.');
+      // Roll back optimistic removal when the save cannot be confirmed.
       if (itemToRemove) {
         setData((prev) =>
           prev
@@ -187,6 +195,12 @@ export default function StoreNudgePage({
           </span>
         </div>
       </div>
+
+      {confirmationError && (
+        <p role="alert" className="p-4 rounded-2xl border border-red-200 bg-red-50 text-sm text-red-700">
+          {confirmationError}
+        </p>
+      )}
 
       {/* Nudge Items List or All-Caught-Up State */}
       {data.nudges.length === 0 ? (

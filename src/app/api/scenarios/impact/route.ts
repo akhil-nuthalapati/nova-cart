@@ -43,10 +43,10 @@ export async function POST(request: Request) {
 
     const input = {
       reduction,
-      inventory_cancels: inventoryCancels || 2245, // DER-006: 1482 unavailable + 762 rejected
+      inventory_cancels: inventoryCancels,
       aov,
       revenue_per_order: Number(revPerOrder.toFixed(2)),
-      tickets_for_unavailable: ticketsForUnavailable || 1121,
+      tickets_for_unavailable: ticketsForUnavailable,
     };
 
     const issues = validateScenarioInput(input);
