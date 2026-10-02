@@ -111,3 +111,27 @@ Open [http://localhost:3000](http://localhost:3000) to view the portal.
 | `/api/availability/confidence` | GET | `BUS-005/006` Item confidence & substitutes |
 | `/api/dev/reset-seed` | POST | Re-seed demo database (non-prod only) |
 | `/api/health` | GET | Health check status |
+
+### Stock confirmation storage
+
+For Supabase deployments, apply `supabase/migrations/00003_atomic_stock_confirmations.sql`
+**before** deploying this application version. The server now calls `confirm_stock_batch`
+so the complete request, audit records, and inventory updates commit in one transaction.
+Only the service role may execute this function. An identical retry returns the saved
+batch result; reusing a store's request key for a different payload returns HTTP 409.
+
+Demo mode retains each item's stock flag and confirmation timestamp in process memory.
+Confirming one item does not refresh the rest of the store. Demo state and replay records
+reset together on reseeding or process restart; demo mode is not durable multi-worker storage.
+Reliability scores use average item age, including a conservative 72-hour contribution
+for never-confirmed items. A store without inventory also receives maximum staleness risk.
+
+Database regression checks are in `tests/sql/stock-confirmations.sql`. Against a
+**disposable local database** with the migrations applied, run:
+
+```bash
+psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/sql/stock-confirmations.sql
+```
+
+The SQL suite uses transaction-scoped fixtures and rolls them back. It checks failure
+rollback, retries, replay conflicts, per-store key isolation, and freshness calculations.

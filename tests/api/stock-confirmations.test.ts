@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '../../src/app/api/stores/[store_id]/stock-confirmations/route';
-import { inventoryRepo, storesRepo } from '../../src/server/repositories';
+import { inventoryRepo, storesRepo, ordersRepo } from '../../src/server/repositories';
 import { invalidateDemoCache } from '../../src/server/db/json-store';
 
 function confirm(body: unknown, storeId = 'store-1') {
@@ -13,11 +13,14 @@ function confirm(body: unknown, storeId = 'store-1') {
 
 beforeEach(() => {
   vi.stubEnv('DEMO_STATIC', '1');
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-02T08:00:00Z'));
   invalidateDemoCache();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   invalidateDemoCache();
 });
@@ -35,7 +38,7 @@ describe('Stock confirmation API', () => {
   it.each(['missing-item', 'store-2-item-1'])(
     'rejects %s before writing any items or improving freshness', async (invalidItemId) => {
       const before = await storesRepo.getStoreById('store-1');
-      const insert = vi.spyOn(inventoryRepo, 'insertStockConfirmation');
+      const insert = vi.spyOn(inventoryRepo, 'confirmStockBatch');
       const response = await confirm({
         items: [
           { itemId: 'store-1-item-1', inStock: true },
@@ -44,13 +47,13 @@ describe('Stock confirmation API', () => {
         idempotencyKey: `invalid-${invalidItemId}`,
       });
       expect(response.status).toBe(400);
-      expect(insert).not.toHaveBeenCalled();
+      expect(insert).toHaveBeenCalledTimes(1);
       expect(await storesRepo.getStoreById('store-1')).toEqual(before);
     }
   );
 
   it('rejects duplicate items before writing', async () => {
-    const insert = vi.spyOn(inventoryRepo, 'insertStockConfirmation');
+    const insert = vi.spyOn(inventoryRepo, 'confirmStockBatch');
     const response = await confirm({
       items: [
         { itemId: 'store-1-item-1', inStock: true },
@@ -71,7 +74,7 @@ describe('Stock confirmation API', () => {
   });
 
   it('reports a write failure and does not cache a successful response', async () => {
-    const insert = vi.spyOn(inventoryRepo, 'insertStockConfirmation')
+    const insert = vi.spyOn(inventoryRepo, 'confirmStockBatch')
       .mockRejectedValueOnce(new Error('Database unavailable'));
     const body = {
       items: [{ itemId: 'store-1-item-1', inStock: true }],
@@ -85,24 +88,8 @@ describe('Stock confirmation API', () => {
     expect(insert).toHaveBeenCalledTimes(2);
   });
 
-  it('does not report a whole batch as successful when its second write fails', async () => {
-    const original = inventoryRepo.insertStockConfirmation;
-    vi.spyOn(inventoryRepo, 'insertStockConfirmation')
-      .mockImplementationOnce(original)
-      .mockRejectedValueOnce(new Error('Second write failed'));
-    const response = await confirm({
-      items: [
-        { itemId: 'store-1-item-1', inStock: true },
-        { itemId: 'store-1-item-2', inStock: false },
-      ],
-      idempotencyKey: 'partial-failure',
-    });
-    expect(response.status).toBe(500);
-    expect(await response.json()).not.toHaveProperty('data');
-  });
-
   it('confirms valid items and replays a successful request without writing again', async () => {
-    const insert = vi.spyOn(inventoryRepo, 'insertStockConfirmation');
+    const insert = vi.spyOn(inventoryRepo, 'confirmStockBatch');
     const body = {
       items: [{ itemId: 'store-1-item-1', inStock: true }],
       idempotencyKey: 'valid-confirmation',
@@ -111,8 +98,34 @@ describe('Stock confirmation API', () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload.data.items_confirmed_count).toBe(1);
-    expect((await storesRepo.getStoreById('store-1'))?.last_confirmed_hours_ago).toBe(0);
+    expect((await storesRepo.getStoreById('store-1'))?.last_confirmed_hours_ago).toBeGreaterThan(0);
     expect(await (await confirm(body)).json()).toEqual(payload);
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insert).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects changed payloads on a reused key', async () => {
+    const body = { items: [{ itemId: 'store-1-item-1', inStock: false }], idempotencyKey: 'conflict' };
+    expect((await confirm(body)).status).toBe(200);
+    expect((await confirm({ ...body, items: [{ itemId: 'store-1-item-1', inStock: true }] })).status).toBe(409);
+    expect((await inventoryRepo.getStoreItems('store-1'))[0].in_stock).toBe(false);
+  });
+
+  it('clears replay data together with demo state on reset', async () => {
+    const body = { items: [{ itemId: 'store-1-item-1', inStock: false }], idempotencyKey: 'reset' };
+    expect((await confirm(body)).status).toBe(200);
+    invalidateDemoCache();
+    expect((await inventoryRepo.getStoreItems('store-1'))[0].in_stock).toBe(true);
+    expect((await confirm(body)).status).toBe(200);
+    expect((await inventoryRepo.getStoreItems('store-1'))[0].in_stock).toBe(false);
+  });
+
+  it('replays the original scores even after order statistics change', async () => {
+    const body = { items: [{ itemId: 'store-1-item-1', inStock: false }], idempotencyKey: 'score-replay' };
+    const first = await (await confirm(body)).json();
+    vi.spyOn(ordersRepo, 'getStoreOrderStats').mockResolvedValue([{
+      store_id: 'store-1', total_orders: 100, total_cancelled: 0,
+      unavail_cancels: 0, reject_cancels: 0, inventory_cancels: 0, unavail_rate: 0, reject_rate: 0,
+    }]);
+    expect(await (await confirm(body)).json()).toEqual(first);
   });
 });

@@ -33,7 +33,7 @@ export async function GET(
     reject_rate: 0,
   };
 
-  const hours = store.last_confirmed_hours_ago ?? 36;
+  const hours = store.last_confirmed_hours_ago ?? RULES_V1.staleness.critical_after_h;
   const r_stale = Math.min(1, hours / RULES_V1.staleness.critical_after_h);
 
   const srsResult = computeSRS(
@@ -46,14 +46,24 @@ export async function GET(
     RULES_V1.srs
   );
 
-  const storeItems = await inventoryRepo.getStoreItems(store_id);
+  const [storeItems, demandCounts] = await Promise.all([
+    inventoryRepo.getStoreItems(store_id),
+    inventoryRepo.getItemDemandCounts(store_id, RULES_V1.nudge.demand_window_d),
+  ]);
+  const now = Date.now();
+  const nudgeItems = storeItems.map((item) => {
+    const confirmedAt = item.last_confirmed_at === null ? NaN : Date.parse(item.last_confirmed_at);
+    const itemHours = Number.isFinite(confirmedAt)
+      ? Math.max(0, (now - confirmedAt) / 3_600_000)
+      : RULES_V1.staleness.critical_after_h;
 
-  const nudgeItems = storeItems.map((item, idx) => ({
-    item_id: item.item_id,
-    item_name: item.item_name,
-    demand_score: item.demand_score ?? Math.max(5, 30 - idx * 3),
-    hours_since_confirmed: item.hours_since_confirmed ?? hours,
-  }));
+    return {
+      item_id: item.item_id,
+      item_name: item.item_name,
+      demand_score: demandCounts.get(item.item_id) ?? 0,
+      hours_since_confirmed: itemHours,
+    };
+  });
 
   const nudges = prioritizeNudges({ items: nudgeItems }, RULES_V1.nudge, RULES_V1.staleness);
 

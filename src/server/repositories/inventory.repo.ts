@@ -7,9 +7,11 @@
 import { getServerSupabase, isDemoStatic } from '../../lib/supabase';
 import {
   getDemoDB,
-  checkDemoIdempotencyKey,
-  recordDemoIdempotencyKey,
-  updateDemoStoreStaleness,
+  getDemoInventory,
+  getDemoBatch,
+  saveDemoBatch,
+  type ConfirmationBatchResult,
+  type ConfirmationScoreContext,
 } from '../db/json-store';
 import type { StockConfirmationRow } from '../db/types';
 
@@ -46,16 +48,27 @@ export async function getStoreItems(storeId: string): Promise<StoreItemWithCatal
     const store = db.stores.find((s) => s.id === storeId);
     const hours = store?.last_confirmed_hours_ago ?? 36;
 
-    return DEMO_CATALOG.map((cat, idx) => ({
-      store_id: storeId,
-      item_id: `${storeId}-${cat.item_id}`,
-      item_name: cat.name,
-      category: cat.category,
-      in_stock: true,
-      last_confirmed_at: new Date(Date.now() - (hours + idx * 2) * 3600 * 1000).toISOString(),
-      demand_score: cat.demand,
-      hours_since_confirmed: Math.max(0, hours + (idx % 3 === 0 ? 6 : -4)),
-    }));
+    const now = Date.now();
+    const state = getDemoInventory(storeId, () => new Map(DEMO_CATALOG.map((cat, idx) => [
+      `${storeId}-${cat.item_id}`,
+      {
+        in_stock: true,
+        last_confirmed_at: new Date(now - (hours + idx * 2) * 3600000).toISOString(),
+      },
+    ])));
+    return DEMO_CATALOG.map((cat) => {
+      const itemId = `${storeId}-${cat.item_id}`;
+      const item = state.get(itemId)!;
+      return {
+        store_id: storeId,
+        item_id: itemId,
+        item_name: cat.name,
+        category: cat.category,
+        ...item,
+        demand_score: cat.demand,
+        hours_since_confirmed: Math.max(0, (now - Date.parse(item.last_confirmed_at)) / 3600000),
+      };
+    });
   }
 
   const supabase = getServerSupabase();
@@ -96,11 +109,14 @@ export async function getStoreFreshness(storeIds?: string[]): Promise<Array<{
       stores = stores.filter((s) => set.has(s.id));
     }
 
-    return stores.map((s) => ({
-      store_id: s.id,
-      avg_hours_since_confirmed: s.last_confirmed_hours_ago,
-      total_items: 10,
-      in_stock_count: 10,
+    return Promise.all(stores.map(async (store) => {
+      const items = await getStoreItems(store.id);
+      return {
+        store_id: store.id,
+        avg_hours_since_confirmed: items.reduce((sum, item) => sum + item.hours_since_confirmed!, 0) / items.length,
+        total_items: items.length,
+        in_stock_count: items.filter((item) => item.in_stock).length,
+      };
     }));
   }
 
@@ -128,10 +144,71 @@ export async function getStoreFreshness(storeIds?: string[]): Promise<Array<{
   }>;
 }
 
-/**
- * Submit a stock confirmation (append-only).
- * Returns the created confirmation row.
- */
+export interface ConfirmationItem {
+  itemId: string;
+  inStock: boolean;
+}
+
+/** Apply the entire batch atomically; identical retries replay the original result. */
+export async function confirmStockBatch(
+  storeId: string,
+  items: ConfirmationItem[],
+  idempotencyKey: string,
+  confirmedBy?: string,
+  scoreContext?: ConfirmationScoreContext,
+): Promise<ConfirmationBatchResult> {
+  const sorted = [...items].sort((a, b) => a.itemId.localeCompare(b.itemId));
+  if (!idempotencyKey || sorted.length === 0 || new Set(sorted.map((item) => item.itemId)).size !== sorted.length) {
+    throw new Error('INVALID_CONFIRMATION_BATCH');
+  }
+  if (!isDemoStatic()) {
+    const { data, error } = await getServerSupabase().rpc('confirm_stock_batch', {
+      p_store_id: storeId,
+      p_items: sorted,
+      p_idempotency_key: idempotencyKey,
+      p_confirmed_by: confirmedBy ?? null,
+      p_score_context: scoreContext ?? null,
+    });
+    if (error) throw new Error(`[inventory.repo] ${error.message}`);
+    if (!data) throw new Error('[inventory.repo] Confirmation returned no result');
+    return data as ConfirmationBatchResult;
+  }
+
+  const payload = JSON.stringify({ items: sorted, confirmedBy: confirmedBy ?? null });
+  // Initialize inventory before entering the synchronous validate-and-commit section.
+  const inventory = await getStoreItems(storeId);
+  const previous = getDemoBatch(storeId, idempotencyKey);
+  if (previous) {
+    if (previous.payload !== payload) throw new Error('IDEMPOTENCY_CONFLICT');
+    return structuredClone(previous.result);
+  }
+  if (!getDemoDB().stores.some((store) => store.id === storeId) ||
+      sorted.some((item) => !inventory.some((existing) => existing.item_id === item.itemId))) {
+    throw new Error('INVALID_CONFIRMATION_ITEM');
+  }
+  const state = getDemoInventory(storeId, () => new Map());
+  const confirmedAt = new Date().toISOString();
+  const hours = () => Array.from(state.values()).reduce((sum, item) =>
+    sum + Math.max(0, (Date.parse(confirmedAt) - Date.parse(item.last_confirmed_at)) / 3600000), 0) / state.size;
+  const beforeHours = hours();
+  const confirmations = sorted.map((item) => ({
+    id: crypto.randomUUID(),
+    store_id: storeId,
+    item_id: item.itemId,
+    in_stock: item.inStock,
+    idempotency_key: JSON.stringify([storeId, idempotencyKey, item.itemId]),
+    confirmed_by: confirmedBy ?? null,
+    created_at: confirmedAt,
+  }));
+  for (const item of sorted) {
+    state.set(item.itemId, { in_stock: item.inStock, last_confirmed_at: confirmedAt });
+  }
+  const result = { confirmations, before_hours: beforeHours, after_hours: hours(), score_context: scoreContext ?? null };
+  saveDemoBatch(storeId, idempotencyKey, payload, result);
+  return structuredClone(result);
+}
+
+/** Single-item callers use the same atomic batch operation. */
 export async function insertStockConfirmation(
   storeId: string,
   itemId: string,
@@ -139,87 +216,8 @@ export async function insertStockConfirmation(
   idempotencyKey: string,
   confirmedBy?: string,
 ): Promise<StockConfirmationRow> {
-  if (isDemoStatic()) {
-    if (checkDemoIdempotencyKey(idempotencyKey)) {
-      throw new Error(`DUPLICATE_IDEMPOTENCY_KEY: ${idempotencyKey}`);
-    }
-    recordDemoIdempotencyKey(idempotencyKey);
-    updateDemoStoreStaleness(storeId, 0);
-
-    return {
-      id: `conf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      store_id: storeId,
-      item_id: itemId,
-      in_stock: inStock,
-      idempotency_key: idempotencyKey,
-      confirmed_by: confirmedBy ?? null,
-      created_at: new Date().toISOString(),
-    };
-  }
-
-  const supabase = getServerSupabase();
-
-  // Insert the confirmation record
-  const { data: confirmRow, error: confirmError } = await supabase
-    .from('stock_confirmations')
-    .insert({
-      store_id: storeId,
-      item_id: itemId,
-      in_stock: inStock,
-      idempotency_key: idempotencyKey,
-      confirmed_by: confirmedBy ?? null,
-    })
-    .select()
-    .single();
-
-  if (confirmError) {
-    if (confirmError.code === '23505') {
-      throw new Error(`DUPLICATE_IDEMPOTENCY_KEY: ${idempotencyKey}`);
-    }
-    throw new Error(`[inventory.repo] Confirmation insert failed: ${confirmError.message}`);
-  }
-
-  // Update the store_items table
-  const { data: updatedItem, error: updateError } = await supabase
-    .from('store_items')
-    .update({
-      in_stock: inStock,
-      last_confirmed_at: new Date().toISOString(),
-    })
-    .eq('store_id', storeId)
-    .eq('item_id', itemId)
-    .select('item_id')
-    .single();
-
-  if (updateError || !updatedItem) {
-    throw new Error(
-      `[inventory.repo] store_items update failed: ${updateError?.message ?? 'Item no longer exists in this store'}`
-    );
-  }
-
-  return confirmRow as StockConfirmationRow;
-}
-
-/**
- * Check if an idempotency key already exists.
- */
-export async function checkIdempotencyKey(key: string): Promise<boolean> {
-  if (isDemoStatic()) {
-    return checkDemoIdempotencyKey(key);
-  }
-
-  const supabase = getServerSupabase();
-
-  const { count, error } = await supabase
-    .from('stock_confirmations')
-    .select('*', { count: 'exact', head: true })
-    .eq('idempotency_key', key);
-
-  if (error) {
-    return false;
-  }
-
-  return (count ?? 0) > 0;
+  const result = await confirmStockBatch(storeId, [{ itemId, inStock }], idempotencyKey, confirmedBy);
+  return result.confirmations[0];
 }
 
 /**
