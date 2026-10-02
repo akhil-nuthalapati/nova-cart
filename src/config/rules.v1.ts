@@ -32,7 +32,7 @@ export const RulesV1Schema = z.object({
       healthy_min: z.number().default(80),
       watch_min: z.number().default(60),
     }),
-    min_orders: z.number().int().nonneg().default(20),
+    min_orders: z.number().int().nonnegative().default(20),
     rate_cap_multiplier: z.number().positive().default(2), // rates capped at N × baseline
   }),
 
@@ -50,13 +50,13 @@ export const RulesV1Schema = z.object({
   // BUS-005 — Item Availability Confidence
   itemConfidence: z.object({
     item_window_d: z.number().int().positive().default(30),
-    item_cancel_low: z.number().int().nonneg().default(3),
+    item_cancel_low: z.number().int().nonnegative().default(3),
     hide_low_confidence: z.boolean().default(false),
   }),
 
   // BUS-001 — Quality-of-Growth Verdict
   verdict: z.object({
-    tolerance: z.number().nonneg().default(0),
+    tolerance: z.number().nonnegative().default(0),
     min_worse: z.number().int().positive().default(3),
   }),
 
