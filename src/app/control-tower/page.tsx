@@ -107,9 +107,9 @@ export default function ControlTowerPage() {
       .catch((err) => console.error('Failed to load initial data:', err));
   }, []);
 
-  // Fetch Stores with Filters
+  // Fetch Stores with Filters (with AbortController for network efficiency)
   useEffect(() => {
-    let ignore = false;
+    const controller = new AbortController();
     const params = new URLSearchParams();
     if (cityFilter) params.append('city', cityFilter);
     if (categoryFilter) params.append('category', categoryFilter);
@@ -117,23 +117,21 @@ export default function ControlTowerPage() {
     if (sortOrder) params.append('sort', sortOrder);
     params.append('limit', '40');
 
-    fetch(`/api/stores/reliability?${params.toString()}`)
+    fetch(`/api/stores/reliability?${params.toString()}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((res) => {
-        if (!ignore) {
-          if (res.data) setStores(res.data);
-          setLoading(false);
-        }
+        if (res.data) setStores(res.data);
+        setLoading(false);
       })
       .catch((err) => {
-        if (!ignore) {
+        if (err.name !== 'AbortError') {
           console.error('Failed to load stores:', err);
           setLoading(false);
         }
       });
 
     return () => {
-      ignore = true;
+      controller.abort();
     };
   }, [cityFilter, categoryFilter, bandFilter, sortOrder]);
 
@@ -368,12 +366,18 @@ export default function ControlTowerPage() {
             <span className="text-xs font-mono text-zinc-400">Range: 0% to 100%</span>
           </div>
           <input
+            id="reduction-slider"
             type="range"
             min="0"
             max="1"
             step="0.05"
             value={reduction}
             onChange={(e) => runScenario(parseFloat(e.target.value))}
+            aria-label="Avoidable inventory cancellation reduction target"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(reduction * 100)}
+            aria-valuetext={`${Math.round(reduction * 100)} percent reduction target`}
             className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
           />
         </div>
@@ -541,6 +545,7 @@ export default function ControlTowerPage() {
             <select
               value={cityFilter}
               onChange={(e) => setCityFilter(e.target.value)}
+              aria-label="Filter stores by city"
               className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold focus:ring-1 focus:ring-black dark:focus:ring-white outline-none"
             >
               <option value="">All Cities</option>
@@ -552,6 +557,7 @@ export default function ControlTowerPage() {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter stores by category"
               className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold focus:ring-1 focus:ring-black dark:focus:ring-white outline-none"
             >
               <option value="">All Categories</option>
@@ -565,6 +571,7 @@ export default function ControlTowerPage() {
             <select
               value={bandFilter}
               onChange={(e) => setBandFilter(e.target.value)}
+              aria-label="Filter stores by reliability band"
               className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold focus:ring-1 focus:ring-black dark:focus:ring-white outline-none"
             >
               <option value="">All Bands</option>
@@ -576,6 +583,7 @@ export default function ControlTowerPage() {
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
+              aria-label="Sort store directory"
               className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold focus:ring-1 focus:ring-black dark:focus:ring-white outline-none"
             >
               <option value="srs_asc">SRS: Lowest First</option>
@@ -596,16 +604,19 @@ export default function ControlTowerPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" aria-label="Store Reliability Score directory">
+              <caption className="sr-only">
+                Directory of 620 store partners ranked by reliability score and cancellation risk
+              </caption>
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 uppercase tracking-wider font-semibold">
-                  <th className="py-3 px-3">Store</th>
-                  <th className="py-3 px-3">City / Category</th>
-                  <th className="py-3 px-3">Reliability (SRS)</th>
-                  <th className="py-3 px-3">Risk Breakdown</th>
-                  <th className="py-3 px-3">Last Confirmed</th>
-                  <th className="py-3 px-3">30d Orders / Cancels</th>
-                  <th className="py-3 px-3 text-right">Action</th>
+                  <th scope="col" className="py-3 px-3">Store</th>
+                  <th scope="col" className="py-3 px-3">City / Category</th>
+                  <th scope="col" className="py-3 px-3">Reliability (SRS)</th>
+                  <th scope="col" className="py-3 px-3">Risk Breakdown</th>
+                  <th scope="col" className="py-3 px-3">Last Confirmed</th>
+                  <th scope="col" className="py-3 px-3">30d Orders / Cancels</th>
+                  <th scope="col" className="py-3 px-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">

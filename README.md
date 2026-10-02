@@ -1,9 +1,8 @@
 # 🛒 NOVA CART — Quality-of-Growth Control Tower & Spend Gate
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.8-black?style=flat&logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.2.8-blue?style=flat&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat&logo=typescript)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-65%2F65%20Passing-brightgreen?style=flat&logo=vitest)](https://vitest.dev/)
+[![Tests](https://img.shields.io/badge/Tests-78%2F78%20Passing-brightgreen?style=flat&logo=vitest)](https://vitest.dev/)
 [![Turbopack](https://img.shields.io/badge/Turbopack-Sub--2s%20Build-purple?style=flat)](https://turbo.build/)
 [![WCAG](https://img.shields.io/badge/A11y-WCAG%202.1%20AA-success?style=flat)](https://www.w3.org/WAI/standards-guidelines/wcag/)
 [![Security](https://img.shields.io/badge/Security-HSTS%20%7C%20CSP%20%7C%20Idempotent-black?style=flat)](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers)
@@ -175,10 +174,11 @@ npm test
  ✓ tests/server/demo-inventory.test.ts (4 tests)
  ✓ tests/server/repositories.test.ts (13 tests)
  ✓ tests/ui/stock-confirmation.test.tsx (6 tests)
+ ✓ tests/api/api-boundaries.test.ts (13 tests)
  ✓ tests/api/stock-confirmations.test.ts (10 tests)
 
- Test Files  17 passed (17)
-      Tests  65 passed (65)
+ Test Files  18 passed (18)
+      Tests  78 passed (78)
 ```
 
 ### Production Build

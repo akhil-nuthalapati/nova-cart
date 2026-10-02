@@ -62,7 +62,7 @@ export default function RootLayout({
                 </div>
               </Link>
 
-              <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
+              <nav aria-label="Main Navigation" className="hidden md:flex items-center gap-1 text-sm font-medium">
                 <Link
                   href="/executive"
                   className="px-3 py-1.5 rounded-md text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"

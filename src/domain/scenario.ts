@@ -27,14 +27,16 @@ export function validateScenarioInput(input: ScenarioInput): DataQualityIssue[] 
  * GOLD-04: r=0.25 → 561 orders, ₹2.73L GMV, ₹0.38L revenue, 280 tickets
  */
 export function computeScenario(input: ScenarioInput): ScenarioResult {
-  const recovered_orders = Math.round(input.inventory_cancels * input.reduction);
-  const gmv_recovered = recovered_orders * input.aov;
-  const revenue_recovered = recovered_orders * input.revenue_per_order;
-  const tickets_avoided = Math.round(input.tickets_for_unavailable * input.reduction);
+  const reduction = Math.max(0, Math.min(1, isNaN(input.reduction) ? 0 : input.reduction));
+  const cancels = Math.max(0, input.inventory_cancels);
+  const recovered_orders = Math.round(cancels * reduction);
+  const gmv_recovered = Math.max(0, recovered_orders * Math.max(0, input.aov));
+  const revenue_recovered = Math.max(0, recovered_orders * Math.max(0, input.revenue_per_order));
+  const tickets_avoided = Math.round(Math.max(0, input.tickets_for_unavailable) * reduction);
 
   return {
-    reduction: input.reduction,
-    baseline_inventory_cancels: input.inventory_cancels,
+    reduction,
+    baseline_inventory_cancels: cancels,
     recovered_orders,
     gmv_recovered,
     revenue_recovered,

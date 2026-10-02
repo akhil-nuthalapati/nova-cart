@@ -141,12 +141,21 @@ export function computeSRS(input: SRSInput, config: RulesV1['srs']): SRSResult {
   }
 
   const cap = config.rate_cap_multiplier;
-  const r_unavail = Math.min(1, input.store_unavail_rate / (cap * config.baselines.unavail_cancel_rate));
-  const r_reject = Math.min(1, input.store_reject_rate / (cap * config.baselines.reject_rate));
+  const unavailDenom = cap * config.baselines.unavail_cancel_rate;
+  const rejectDenom = cap * config.baselines.reject_rate;
+
+  const r_stale_clamped = Math.min(1, Math.max(0, input.r_stale));
+  const r_unavail = unavailDenom > 0
+    ? Math.min(1, Math.max(0, input.store_unavail_rate / unavailDenom))
+    : 0;
+  const r_reject = rejectDenom > 0
+    ? Math.min(1, Math.max(0, input.store_reject_rate / rejectDenom))
+    : 0;
 
   const { weights } = config;
-  const risk = weights.stale * input.r_stale + weights.unavail * r_unavail + weights.reject * r_reject;
-  const srs = Math.round(100 * (1 - risk));
+  const rawRisk = weights.stale * r_stale_clamped + weights.unavail * r_unavail + weights.reject * r_reject;
+  const risk = Math.min(1, Math.max(0, rawRisk));
+  const srs = Math.min(100, Math.max(0, Math.round(100 * (1 - risk))));
 
   let band: SRSBand;
   if (srs >= config.bands.healthy_min) {
@@ -157,5 +166,5 @@ export function computeSRS(input: SRSInput, config: RulesV1['srs']): SRSResult {
     band = SRSBand.AT_RISK;
   }
 
-  return { srs, band, r_stale: input.r_stale, r_unavail, r_reject, risk };
+  return { srs, band, r_stale: r_stale_clamped, r_unavail, r_reject, risk };
 }

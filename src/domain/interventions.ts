@@ -60,13 +60,16 @@ export function generateInterventions(
     };
   });
 
-  // Rank descending by expected avoided cancellations, then by lower SRS
+  // Rank descending by expected avoided cancellations, then by lower SRS, then by store_id
   entries.sort((a, b) => {
     if (b.expected_avoided_orders !== a.expected_avoided_orders) {
       return b.expected_avoided_orders - a.expected_avoided_orders;
     }
-    return a.srs - b.srs;
+    if (a.srs !== b.srs) {
+      return a.srs - b.srs;
+    }
+    return a.store_id.localeCompare(b.store_id);
   });
 
-  return entries.slice(0, limit);
+  return entries.slice(0, Math.max(1, limit));
 }

@@ -254,14 +254,18 @@ export default function ExecutiveDashboard() {
 
           <div className="flex items-center gap-3">
             <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">Proposed Monthly Increase</label>
+              <label htmlFor="proposed-spend" className="block text-xs font-semibold text-zinc-500 mb-1">
+                Proposed Monthly Increase
+              </label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-zinc-400 font-semibold text-xs">₹</span>
                 <input
+                  id="proposed-spend"
                   type="number"
                   step="50000"
                   value={proposedSpend}
                   onChange={(e) => setProposedSpend(Number(e.target.value))}
+                  aria-label="Proposed monthly marketing spend increase in rupees"
                   className="pl-7 pr-3 py-2 border border-zinc-200 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900 font-mono font-semibold text-sm w-44 focus:ring-1 focus:ring-black dark:focus:ring-white outline-none"
                 />
               </div>
@@ -331,6 +335,8 @@ export default function ExecutiveDashboard() {
           </div>
           <button
             onClick={() => setShowEvidence(!showEvidence)}
+            aria-expanded={showEvidence}
+            aria-controls="canonical-evidence-chain-grid"
             className="text-xs text-zinc-900 dark:text-zinc-100 hover:underline font-semibold"
           >
             {showEvidence ? 'Collapse' : 'Expand'}
@@ -338,7 +344,7 @@ export default function ExecutiveDashboard() {
         </div>
 
         {showEvidence && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+          <div id="canonical-evidence-chain-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
             {verdictData.evidence.map((ev, idx) => (
               <div
                 key={idx}

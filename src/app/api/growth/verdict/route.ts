@@ -25,14 +25,21 @@ export async function GET() {
 
   const verdictResult = computeVerdict(baseline, current, RULES_V1.verdict);
 
-  return NextResponse.json({
-    data: verdictResult,
-    meta: {
-      rule_id: 'BUS-001',
-      rule_version: 'v1',
-      confidence: 'HIGH',
-      warnings: [],
-      synthetic: true,
+  return NextResponse.json(
+    {
+      data: verdictResult,
+      meta: {
+        rule_id: 'BUS-001',
+        rule_version: 'v1',
+        confidence: 'HIGH',
+        warnings: [],
+        synthetic: true,
+      },
     },
-  });
+    {
+      headers: {
+        'Cache-Control': 'private, no-cache, no-transform',
+      },
+    }
+  );
 }

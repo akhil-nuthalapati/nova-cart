@@ -14,8 +14,10 @@ export async function GET(request: Request) {
   const band = searchParams.get('band');
   const category = searchParams.get('category');
   const sort = searchParams.get('sort') || 'srs_asc'; // default to most at-risk
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
-  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const rawLimit = parseInt(searchParams.get('limit') || '50', 10);
+  const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit));
+  const rawPage = parseInt(searchParams.get('page') || '1', 10);
+  const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
 
   const stores = await storesRepo.getStores({
     city: city || undefined,
@@ -37,7 +39,7 @@ export async function GET(request: Request) {
     };
 
     const hours = store.last_confirmed_hours_ago ?? RULES_V1.staleness.critical_after_h;
-    const r_stale = Math.min(1, hours / RULES_V1.staleness.critical_after_h);
+    const r_stale = Math.min(1, Math.max(0, hours / RULES_V1.staleness.critical_after_h));
     const unavail_rate = stats.unavail_rate;
     const reject_rate = stats.reject_rate;
 
@@ -76,33 +78,41 @@ export async function GET(request: Request) {
     scoredStores = scoredStores.filter((s) => s.band.toLowerCase() === b);
   }
 
-  // Sort
-  if (sort === 'srs_asc') {
-    scoredStores.sort((a, b) => a.srs - b.srs);
-  } else if (sort === 'srs_desc') {
-    scoredStores.sort((a, b) => b.srs - a.srs);
+  // Sort with deterministic tie-break
+  if (sort === 'srs_desc') {
+    scoredStores.sort((a, b) => b.srs !== a.srs ? b.srs - a.srs : a.store_id.localeCompare(b.store_id));
   } else if (sort === 'cancels_desc') {
-    scoredStores.sort((a, b) => b.cancels_30d - a.cancels_30d);
+    scoredStores.sort((a, b) => b.cancels_30d !== a.cancels_30d ? b.cancels_30d - a.cancels_30d : a.store_id.localeCompare(b.store_id));
+  } else {
+    // default srs_asc
+    scoredStores.sort((a, b) => a.srs !== b.srs ? a.srs - b.srs : a.store_id.localeCompare(b.store_id));
   }
 
   const total = scoredStores.length;
   const start = (page - 1) * limit;
   const paginated = scoredStores.slice(start, start + limit);
 
-  return NextResponse.json({
-    data: paginated,
-    pagination: {
-      total,
-      page,
-      limit,
-      total_pages: Math.ceil(total / limit),
+  return NextResponse.json(
+    {
+      data: paginated,
+      pagination: {
+        total,
+        page,
+        limit,
+        total_pages: Math.ceil(total / limit),
+      },
+      meta: {
+        rule_id: 'BUS-003,BUS-004',
+        rule_version: 'v1',
+        confidence: 'HIGH',
+        warnings: [],
+        synthetic: true,
+      },
     },
-    meta: {
-      rule_id: 'BUS-003,BUS-004',
-      rule_version: 'v1',
-      confidence: 'HIGH',
-      warnings: [],
-      synthetic: true,
-    },
-  });
+    {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=60',
+      },
+    }
+  );
 }

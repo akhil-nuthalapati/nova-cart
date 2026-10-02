@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Verdict, SpendGateDecision } from '../domain/types';
+import { Verdict, SpendGateDecision, DataLabel } from '../domain/types';
 
 // Availability Contracts
 export const GetAvailabilityRequestSchema = z.object({
@@ -25,15 +25,38 @@ export const NudgeResponseSchema = z.object({
   band: z.string(),
 });
 
+// Domain schemas
+export const MetricRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  baseline: z.number(),
+  current: z.number(),
+  delta: z.number(),
+  direction: z.enum(['up', 'down', 'flat']),
+  label: z.nativeEnum(DataLabel),
+  type: z.enum(['growth', 'guardrail']),
+  worse: z.boolean(),
+  unit: z.string(),
+});
+
+export const EvidenceSchema = z.object({
+  metric: z.string(),
+  value: z.string(),
+  period: z.string(),
+  source_id: z.string(),
+  label: z.nativeEnum(DataLabel),
+  implication: z.string(),
+});
+
 // Growth Quality Contracts
 export const GetVerdictRequestSchema = z.object({});
 
 export const GetVerdictResponseSchema = z.object({
   verdict: z.nativeEnum(Verdict),
-  growth_metrics: z.array(z.any()), // Would map to MetricRow in production
-  guardrail_metrics: z.array(z.any()),
+  growth_metrics: z.array(MetricRowSchema),
+  guardrail_metrics: z.array(MetricRowSchema),
   worse_count: z.number(),
-  evidence: z.array(z.any()),
+  evidence: z.array(EvidenceSchema),
 });
 
 export const SpendGateRequestSchema = z.object({

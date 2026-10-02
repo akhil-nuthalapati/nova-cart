@@ -32,14 +32,21 @@ export async function GET() {
 
   const result = computeCancellationBreakdown(input);
 
-  return NextResponse.json({
-    data: result,
-    meta: {
-      rule_id: 'BUS-002',
-      rule_version: 'v1',
-      confidence: 'HIGH',
-      warnings: [],
-      synthetic: true,
+  return NextResponse.json(
+    {
+      data: result,
+      meta: {
+        rule_id: 'BUS-002',
+        rule_version: 'v1',
+        confidence: 'HIGH',
+        warnings: [],
+        synthetic: true,
+      },
+    },
+    {
+      headers: {
+        'Cache-Control': 'private, no-cache, no-transform',
+      },
     }
-  });
+  );
 }
