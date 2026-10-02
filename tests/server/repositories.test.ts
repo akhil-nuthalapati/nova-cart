@@ -118,22 +118,13 @@ describe('Server Repositories (Dual-Mode / Demo Mode)', () => {
 
     it('records stock confirmations with idempotency', async () => {
       const key = `test-idem-${Date.now()}`;
-      expect(await inventoryRepo.checkIdempotencyKey(key)).toBe(false);
-
       const result = await inventoryRepo.insertStockConfirmation(
-        'store-1',
-        'item-1',
-        true,
-        key
+        'store-1', 'store-1-item-1', false, key
       );
-
-      expect(result).toHaveProperty('idempotency_key', key);
-      expect(await inventoryRepo.checkIdempotencyKey(key)).toBe(true);
-
-      // Duplicate insert should throw
-      await expect(
-        inventoryRepo.insertStockConfirmation('store-1', 'item-1', true, key)
-      ).rejects.toThrow('DUPLICATE_IDEMPOTENCY_KEY');
+      expect(result.in_stock).toBe(false);
+      expect(await inventoryRepo.insertStockConfirmation('store-1', 'store-1-item-1', false, key))
+        .toEqual(result);
+      expect((await inventoryRepo.getStoreItems('store-1'))[0].in_stock).toBe(false);
     });
   });
 });

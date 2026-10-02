@@ -4,9 +4,6 @@ import { computeSRS } from '../../../../../domain/reliability';
 import { RULES_V1 } from '../../../../../config/rules.v1';
 import { storesRepo, ordersRepo, inventoryRepo } from '../../../../../server/repositories';
 
-// In-memory idempotency cache for fast response matching
-const idempotencyCache = new Map<string, unknown>();
-
 const StockConfirmationSchema = z.object({
   items: z.array(
     z.object({
@@ -23,7 +20,7 @@ const StockConfirmationSchema = z.object({
 /**
  * API-05: POST /api/stores/{store_id}/stock-confirmations
  * Roles: owner(own), pm
- * Purpose: Writes stock confirmation, resets staleness to 0h, and recalculates SRS
+ * Purpose: Atomically confirms selected items and recalculates whole-store SRS
  */
 export async function POST(
   request: Request,
@@ -58,36 +55,11 @@ export async function POST(
 
     const { items, idempotencyKey } = parsed.data;
 
-    // Idempotency check (ARCH-007 / TEST-API-05-IDEM)
-    const cacheKey = `${store_id}:${idempotencyKey}`;
-    if (idempotencyCache.has(cacheKey)) {
-      return NextResponse.json(idempotencyCache.get(cacheKey));
-    }
-
     const store = await storesRepo.getStoreById(store_id);
     if (!store) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `Store with ID ${store_id} not found` } },
         { status: 404 }
-      );
-    }
-
-    // Validate the entire batch before any writes or freshness changes.
-    const storeItems = await inventoryRepo.getStoreItems(store_id);
-    const validItemIds = new Set(storeItems.map((item) => item.item_id));
-    const invalidItemIds = items
-      .filter((item) => !validItemIds.has(item.itemId))
-      .map((item) => item.itemId);
-    if (invalidItemIds.length > 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Every item must belong to the requested store',
-            details: { invalidItemIds },
-          },
-        },
-        { status: 400 }
       );
     }
 
@@ -101,48 +73,45 @@ export async function POST(
       reject_rate: 0,
     };
 
-    // Before SRS (using previous staleness)
-    const previousHours = store.last_confirmed_hours_ago ?? 48;
+    const batch = await inventoryRepo.confirmStockBatch(store_id, items, idempotencyKey, undefined, {
+      total_orders: stats.total_orders,
+      unavail_rate: stats.unavail_rate,
+      reject_rate: stats.reject_rate,
+    });
+    // Replays use the original score inputs, even when order statistics have changed.
+    const scoreStats = batch.score_context ?? stats;
+
+    // Use actual whole-store freshness on both sides of the committed batch.
+    const previousHours = batch.before_hours;
     const r_stale_before = Math.min(1, previousHours / RULES_V1.staleness.critical_after_h);
     const beforeResult = computeSRS(
       {
         r_stale: r_stale_before,
-        store_unavail_rate: stats.unavail_rate,
-        store_reject_rate: stats.reject_rate,
-        orders_in_window: stats.total_orders,
+        store_unavail_rate: scoreStats.unavail_rate,
+        store_reject_rate: scoreStats.reject_rate,
+        orders_in_window: scoreStats.total_orders,
       },
       RULES_V1.srs
     );
 
-    // After SRS (confirmation resets staleness to 0h fresh)
-    const r_stale_after = 0;
+    // Unconfirmed items keep their age after a partial confirmation.
+    const r_stale_after = Math.min(1, batch.after_hours / RULES_V1.staleness.critical_after_h);
     const afterResult = computeSRS(
       {
         r_stale: r_stale_after,
-        store_unavail_rate: stats.unavail_rate,
-        store_reject_rate: stats.reject_rate,
-        orders_in_window: stats.total_orders,
+        store_unavail_rate: scoreStats.unavail_rate,
+        store_reject_rate: scoreStats.reject_rate,
+        orders_in_window: scoreStats.total_orders,
       },
       RULES_V1.srs
     );
-
-    // Only report success after every write succeeds. Earlier writes may persist
-    // if a later item fails; never cache a successful response for that batch.
-    for (const item of items) {
-      await inventoryRepo.insertStockConfirmation(
-        store_id,
-        item.itemId,
-        item.inStock,
-        `${idempotencyKey}:${item.itemId}`
-      );
-    }
 
     const responsePayload = {
       data: {
         store_id,
         idempotencyKey,
         items_confirmed_count: items.length,
-        confirmed_at: new Date().toISOString(),
+        confirmed_at: batch.confirmations[0].created_at,
         before_srs: beforeResult.srs,
         before_band: beforeResult.band,
         after_srs: afterResult.srs,
@@ -158,15 +127,14 @@ export async function POST(
       },
     };
 
-    // Save to idempotency cache
-    idempotencyCache.set(cacheKey, responsePayload);
-
     return NextResponse.json(responsePayload);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to record stock confirmation';
+    const conflict = message.includes('IDEMPOTENCY_CONFLICT');
+    const invalid = message.includes('INVALID_CONFIRMATION');
     return NextResponse.json(
-      { error: { code: 'INTERNAL', message } },
-      { status: 500 }
+      { error: { code: conflict ? 'IDEMPOTENCY_CONFLICT' : invalid ? 'VALIDATION_ERROR' : 'INTERNAL', message } },
+      { status: conflict ? 409 : invalid ? 400 : 500 }
     );
   }
 }

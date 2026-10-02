@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import type { StockConfirmationRow } from './types';
 
 export interface DemoDBStore {
   id: string;
@@ -35,7 +36,43 @@ export interface DemoDB {
 }
 
 let cachedDB: DemoDB | null = null;
-const memoryIdempotencyKeys = new Set<string>();
+export interface DemoItemState {
+  in_stock: boolean;
+  last_confirmed_at: string;
+}
+
+export interface ConfirmationScoreContext {
+  total_orders: number;
+  unavail_rate: number;
+  reject_rate: number;
+}
+
+export interface ConfirmationBatchResult {
+  score_context: ConfirmationScoreContext | null;
+  confirmations: StockConfirmationRow[];
+  before_hours: number;
+  after_hours: number;
+}
+
+const demoInventory = new Map<string, Map<string, DemoItemState>>();
+const demoBatches = new Map<string, { payload: string; result: ConfirmationBatchResult }>();
+
+export function getDemoInventory(storeId: string, seed: () => Map<string, DemoItemState>) {
+  let items = demoInventory.get(storeId);
+  if (!items) {
+    items = seed();
+    demoInventory.set(storeId, items);
+  }
+  return items;
+}
+
+export function getDemoBatch(storeId: string, key: string) {
+  return demoBatches.get(JSON.stringify([storeId, key]));
+}
+
+export function saveDemoBatch(storeId: string, key: string, payload: string, result: ConfirmationBatchResult) {
+  demoBatches.set(JSON.stringify([storeId, key]), { payload, result });
+}
 
 /**
  * Get the demo database, caching in memory for performance.
@@ -99,30 +136,6 @@ export function getDemoDB(): DemoDB {
  */
 export function invalidateDemoCache(): void {
   cachedDB = null;
-  memoryIdempotencyKeys.clear();
-}
-
-/**
- * Check idempotency key in demo mode.
- */
-export function checkDemoIdempotencyKey(key: string): boolean {
-  return memoryIdempotencyKeys.has(key);
-}
-
-/**
- * Record idempotency key in demo mode.
- */
-export function recordDemoIdempotencyKey(key: string): void {
-  memoryIdempotencyKeys.add(key);
-}
-
-/**
- * Update store staleness in demo mode (e.g. after confirmation).
- */
-export function updateDemoStoreStaleness(storeId: string, hoursAgo: number = 0): void {
-  const db = getDemoDB();
-  const store = db.stores.find((s) => s.id === storeId);
-  if (store) {
-    store.last_confirmed_hours_ago = hoursAgo;
-  }
+  demoInventory.clear();
+  demoBatches.clear();
 }

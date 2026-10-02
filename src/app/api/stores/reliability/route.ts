@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       reject_rate: 0,
     };
 
-    const hours = store.last_confirmed_hours_ago ?? 24;
+    const hours = store.last_confirmed_hours_ago ?? RULES_V1.staleness.critical_after_h;
     const r_stale = Math.min(1, hours / RULES_V1.staleness.critical_after_h);
     const unavail_rate = stats.unavail_rate;
     const reject_rate = stats.reject_rate;
