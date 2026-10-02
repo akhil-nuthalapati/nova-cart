@@ -10,10 +10,13 @@ const idempotencyCache = new Map<string, unknown>();
 const StockConfirmationSchema = z.object({
   items: z.array(
     z.object({
-      itemId: z.string(),
+      itemId: z.string().min(1),
       inStock: z.boolean(),
     })
-  ).min(1),
+  ).min(1).refine(
+    (items) => new Set(items.map((item) => item.itemId)).size === items.length,
+    { message: 'Each item may only be confirmed once per request' }
+  ),
   idempotencyKey: z.string().min(1),
 });
 
@@ -28,7 +31,16 @@ export async function POST(
 ) {
   try {
     const { store_id } = await params;
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch (err: unknown) {
+      if (!(err instanceof SyntaxError)) throw err;
+      return NextResponse.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'Request body must be valid JSON' } },
+        { status: 400 }
+      );
+    }
 
     const parsed = StockConfirmationSchema.safeParse(body);
     if (!parsed.success) {
@@ -52,17 +64,30 @@ export async function POST(
       return NextResponse.json(idempotencyCache.get(cacheKey));
     }
 
-    const alreadyExists = await inventoryRepo.checkIdempotencyKey(idempotencyKey);
-    if (alreadyExists) {
-      const cached = idempotencyCache.get(cacheKey);
-      if (cached) return NextResponse.json(cached);
-    }
-
     const store = await storesRepo.getStoreById(store_id);
     if (!store) {
       return NextResponse.json(
         { error: { code: 'NOT_FOUND', message: `Store with ID ${store_id} not found` } },
         { status: 404 }
+      );
+    }
+
+    // Validate the entire batch before any writes or freshness changes.
+    const storeItems = await inventoryRepo.getStoreItems(store_id);
+    const validItemIds = new Set(storeItems.map((item) => item.item_id));
+    const invalidItemIds = items
+      .filter((item) => !validItemIds.has(item.itemId))
+      .map((item) => item.itemId);
+    if (invalidItemIds.length > 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Every item must belong to the requested store',
+            details: { invalidItemIds },
+          },
+        },
+        { status: 400 }
       );
     }
 
@@ -101,19 +126,15 @@ export async function POST(
       RULES_V1.srs
     );
 
-    // Persist confirmation via repository
+    // Only report success after every write succeeds. Earlier writes may persist
+    // if a later item fails; never cache a successful response for that batch.
     for (const item of items) {
-      try {
-        await inventoryRepo.insertStockConfirmation(
-          store_id,
-          item.itemId,
-          item.inStock,
-          `${idempotencyKey}:${item.itemId}`
-        );
-      } catch (err: unknown) {
-        // If single duplicate key inside batch, ignore or handle
-        console.warn(`[stock-confirmation] Confirmation item insert notice:`, err);
-      }
+      await inventoryRepo.insertStockConfirmation(
+        store_id,
+        item.itemId,
+        item.inStock,
+        `${idempotencyKey}:${item.itemId}`
+      );
     }
 
     const responsePayload = {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
 
 /**
  * Deterministic seed script calibrated to 02_BUSINESS_LOGIC.md canonical values.
@@ -18,13 +19,12 @@ class PRNG {
   }
 }
 
-const rng = new PRNG(42);
-
 const CITIES = ['City A', 'City B', 'City C']; // ASM-003
 const CATEGORIES = ['grocery', 'pharmacy', 'bakery', 'stationery', 'other']; // ASM-004
 const CATEGORY_WEIGHTS = [0.45, 0.20, 0.15, 0.10, 0.10]; // grocery-heavy
 
 export function seedDatabase() {
+  const rng = new PRNG(42);
   const TOTAL_ORDERS = 38500;   // MET-003 current
   const CANCELLATION_RATE = 0.11; // MET-007 current
   const AOV = 486;              // MET-004 current
@@ -155,4 +155,7 @@ export function seedDatabase() {
   console.log(`[SEED] Baseline/Current snapshots match 02_BUSINESS_LOGIC.md §2 canonical values.`);
 }
 
-seedDatabase();
+// Imports (including Next.js builds) must never reset the database.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  seedDatabase();
+}

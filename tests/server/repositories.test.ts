@@ -28,8 +28,8 @@ describe('Server Repositories (Dual-Mode / Demo Mode)', () => {
     it('fetches active rule configuration', async () => {
       const rules = await metricsRepo.getActiveRuleConfig();
       expect(rules).not.toBeNull();
-      expect((rules as any).srs).toBeDefined();
-      expect((rules as any).staleness).toBeDefined();
+      expect(rules?.srs).toBeDefined();
+      expect(rules?.staleness).toBeDefined();
     });
   });
 
