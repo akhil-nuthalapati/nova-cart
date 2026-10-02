@@ -3,8 +3,14 @@ import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Nova Cart — Quality-of-Growth Control Tower',
-  description: 'Availability Guard & Spend Gate Operations Platform for Nova Cart',
+  title: 'Nova Cart — Quality-of-Growth Control Tower & Spend Gate',
+  description: 'Enterprise Availability Guard & Spend Gate Operations Platform for Nova Cart. Decouple growth from operational leaks.',
+  keywords: ['quick-commerce', 'control tower', 'spend gate', 'operations', 'unit economics', 'reliability score'],
+  openGraph: {
+    title: 'Nova Cart — Quality-of-Growth Control Tower',
+    description: 'Enterprise Availability Guard & Spend Gate Operations Platform for Nova Cart.',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
@@ -15,6 +21,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased min-h-screen flex flex-col bg-white dark:bg-black text-zinc-900 dark:text-zinc-100">
+        {/* Accessibility Skip Link */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2 focus:bg-black focus:text-white dark:focus:bg-white dark:focus:text-black focus:rounded-lg focus:shadow-xl focus:outline-none focus:ring-2 focus:ring-zinc-500 text-xs font-bold"
+        >
+          Skip to main content
+        </a>
+
         {/* Mandatory ASM-006 Synthetic Demo Data Banner */}
         <div className="bg-zinc-950 text-zinc-300 border-b border-zinc-800 text-xs px-4 py-1.5 font-medium flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -87,7 +101,7 @@ export default function RootLayout({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1">{children}</main>
+        <main id="main-content" className="flex-1 focus:outline-none">{children}</main>
 
         {/* Global Footer */}
         <footer className="border-t border-zinc-200 dark:border-zinc-800 py-6 text-center text-xs text-zinc-500">

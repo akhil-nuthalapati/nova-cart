@@ -169,8 +169,12 @@ export default function StoreNudgePage({
             {data.band}
           </div>
           {srsLift !== null && srsLift > 0 && (
-            <div className="text-[10px] font-bold text-zinc-900 dark:text-white mt-1">
-              +{srsLift} pts lift
+            <div
+              aria-live="polite"
+              aria-atomic="true"
+              className="text-[10px] font-bold text-zinc-900 dark:text-white mt-1"
+            >
+              +{srsLift} pts lift!
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Verdict, SpendGateDecision } from '../../domain/types';
+import { Verdict } from '../../domain/types';
 import type { VerdictResult, SpendGateResult } from '../../domain/types';
 import Link from 'next/link';
 
